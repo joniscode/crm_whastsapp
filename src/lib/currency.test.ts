@@ -6,12 +6,24 @@ import {
   formatCurrencyShort,
 } from "./currency";
 
+// formatCurrency uses the runtime's default locale (the viewer's, in
+// the browser), so the expected digit grouping and decimal mark are
+// derived from that same locale rather than assuming en-US — the suite
+// must pass on a machine set to es-CO ("1.234") as well as en-US ("1,234").
+const GROUPED_1234 = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
+}).format(1234);
+const DECIMAL_MARK =
+  new Intl.NumberFormat(undefined)
+    .formatToParts(1.5)
+    .find((p) => p.type === "decimal")?.value ?? ".";
+
 describe("formatCurrency", () => {
   it("formats whole amounts with no minor units", () => {
     // Use a non-breaking-space-tolerant check: Intl may insert NBSP.
     const out = formatCurrency(1234, "USD");
-    expect(out).toContain("1,234");
-    expect(out).not.toContain(".00");
+    expect(out).toContain(GROUPED_1234);
+    expect(out).not.toContain(`${DECIMAL_MARK}00`);
   });
 
   it("defaults to USD when no currency is given", () => {
@@ -30,13 +42,13 @@ describe("formatCurrency", () => {
     // Intl is lenient here — it uses the code as the symbol.
     const out = formatCurrency(1234, "ZZZ");
     expect(out).toContain("ZZZ");
-    expect(out).toContain("1,234");
+    expect(out).toContain(GROUPED_1234);
   });
 
   it("never throws on a structurally invalid code (no DB CHECK on deals.currency)", () => {
     for (const bad of ["United States", "US", "USDD", "12", "u$d"]) {
       expect(() => formatCurrency(1234, bad)).not.toThrow();
-      expect(formatCurrency(1234, bad)).toContain("1,234");
+      expect(formatCurrency(1234, bad)).toContain(GROUPED_1234);
     }
   });
 
