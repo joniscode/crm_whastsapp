@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
@@ -9,7 +10,8 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
  * CSP ships as `Content-Security-Policy-Report-Only` so the browser
  * surfaces violations in the console without blocking anything — once
  * we have confidence nothing legit trips it (two deploys, a pass on
- * every route), flip the key to `Content-Security-Policy` to enforce.
+ * every route), set `CSP_ENFORCE=true` at build time to send it as
+ * `Content-Security-Policy` and actually block violations.
  *
  * The rest of the headers are straight blocks, safe to enforce today:
  *   - HSTS: only meaningful on HTTPS (no-op on http://localhost).
@@ -36,7 +38,10 @@ const SECURITY_HEADERS = [
     value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
   },
   {
-    key: "Content-Security-Policy-Report-Only",
+    key:
+      process.env.CSP_ENFORCE === "true"
+        ? "Content-Security-Policy"
+        : "Content-Security-Policy-Report-Only",
     value: [
       "default-src 'self'",
       // Next.js needs 'unsafe-inline' for its inline hydration script
@@ -55,7 +60,9 @@ const SECURITY_HEADERS = [
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      // Sentry ingest hosts carry browser error reports when
+      // NEXT_PUBLIC_SENTRY_DSN is set.
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -161,4 +168,19 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+/**
+ * Sentry build integration. Runtime error reporting is wired in
+ * src/instrumentation.ts / src/instrumentation-client.ts and stays off
+ * without a DSN. This wrapper only uploads source maps (readable stack
+ * traces), which needs SENTRY_AUTH_TOKEN + SENTRY_ORG + SENTRY_PROJECT;
+ * without a token the upload step is skipped.
+ */
+export default withSentryConfig(withNextIntl(nextConfig), {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  widenClientFileUpload: true,
+  telemetry: false,
+});
