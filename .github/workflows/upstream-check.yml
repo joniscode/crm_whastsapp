@@ -1,0 +1,76 @@
+name: Upstream check
+
+# This repo is a fork of ArnasDon/wacrm. Once a week, compare our main
+# with upstream's and keep one open issue listing the commits we don't
+# have yet (security fixes land there first). The merge itself stays
+# manual so conflicts with our own changes get a human look:
+#
+#   git fetch upstream
+#   git merge upstream/main
+#   npm install && npm test
+#   git push
+#
+# It opens an issue rather than a PR on purpose: GITHUB_TOKEN may not
+# push commits that touch .github/workflows, and upstream regularly does.
+
+on:
+  schedule:
+    - cron: '0 13 * * 1' # Mondays 13:00 UTC = 08:00 Colombia
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    if: github.repository != 'ArnasDon/wacrm'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM: https://github.com/ArnasDon/wacrm.git
+      TITLE: 'Upstream updates available (ArnasDon/wacrm)'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare with upstream
+        id: cmp
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch --quiet upstream main
+          count=$(git rev-list --count HEAD..upstream/main)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          {
+            echo "Upstream \`main\` has **$count** commit(s) that this repo does not."
+            echo
+            echo "Security and bug fixes usually arrive this way — merge soon:"
+            echo
+            echo '```bash'
+            echo 'git fetch upstream'
+            echo 'git merge upstream/main'
+            echo 'npm install && npm test'
+            echo 'git push'
+            echo '```'
+            echo
+            echo '### Pending commits'
+            echo
+            git log --no-merges --format='- %s (`%h`, %as)' HEAD..upstream/main | head -100
+            echo
+            echo "_Updated $(date -u +%Y-%m-%d) by the Upstream check workflow._"
+          } > body.md
+
+      - name: Open or update the issue
+        run: |
+          existing=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [ "${{ steps.cmp.outputs.count }}" = "0" ]; then
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" --comment "Up to date with upstream."
+            fi
+            echo "Up to date with upstream."
+          elif [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file body.md
+          else
+            gh issue create --title "$TITLE" --body-file body.md
+          fi

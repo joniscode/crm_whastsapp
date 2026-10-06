@@ -1,0 +1,78 @@
+name: Database backup
+
+# Daily logical backup of the production Supabase database.
+#
+# The Supabase free plan has no restorable daily backups, and a CRM's
+# conversations and contacts are not something to lose. This job runs
+# pg_dump against the database, encrypts the dump (it holds customer
+# data) and keeps it as a workflow artifact for 30 days.
+#
+# Setup (repo → Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL     Supabase → Connect → "Session pooler" URI
+#                       (postgresql://postgres.<ref>:<password>@aws-...pooler.supabase.com:5432/postgres).
+#                       Use the pooler: the direct db.<ref>.supabase.co
+#                       host is IPv6-only and GitHub runners can't reach it.
+#   BACKUP_PASSPHRASE   long random string; needed to decrypt. Store it
+#                       somewhere other than this repo.
+#
+# Without both secrets the job skips (it never fails a fork that hasn't
+# set it up).
+#
+# Restore:
+#   gpg --decrypt wacrm-<date>.dump.gpg > wacrm.dump
+#   pg_restore --no-owner --no-privileges -d "<target db url>" wacrm.dump
+
+on:
+  schedule:
+    - cron: '30 7 * * *' # 07:30 UTC = 02:30 Colombia
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    name: pg_dump → encrypted artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::notice::SUPABASE_DB_URL / BACKUP_PASSPHRASE not set — skipping backup."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump database
+        if: steps.cfg.outputs.enabled == 'true'
+        run: |
+          stamp=$(date -u +%Y-%m-%dT%H%MZ)
+          echo "STAMP=$stamp" >> "$GITHUB_ENV"
+          # postgres:17 client can dump any older server version.
+          # public = all CRM data, auth = users/logins.
+          docker run --rm -e PGURL="$SUPABASE_DB_URL" -v "$PWD:/out" postgres:17 \
+            sh -c 'pg_dump "$PGURL" --format=custom --no-owner --no-privileges \
+                     --schema=public --schema=auth --file=/out/wacrm.dump'
+          ls -lh wacrm.dump
+
+      - name: Encrypt
+        if: steps.cfg.outputs.enabled == 'true'
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 --output "wacrm-$STAMP.dump.gpg" wacrm.dump
+          shred -u wacrm.dump
+
+      - uses: actions/upload-artifact@v4
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          name: wacrm-backup-${{ env.STAMP }}
+          path: wacrm-*.dump.gpg
+          retention-days: 30
+          if-no-files-found: error
