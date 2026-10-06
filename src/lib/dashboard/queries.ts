@@ -16,6 +16,12 @@ import type {
   ResponseTimeBucket,
   ResponseTimeSummary,
 } from './types'
+import {
+  computeTeamPerformance,
+  type TeamConversationRow,
+  type TeamMessageRow,
+  type TeamPerformance,
+} from './team'
 
 // ------------------------------------------------------------
 // All client-side aggregation. RLS scopes every query to the
@@ -26,6 +32,44 @@ import type {
 // ------------------------------------------------------------
 
 type DB = SupabaseClient
+
+// PostgREST caps a single response (1 000 rows on Supabase by default),
+// so a plain select over "every message in the last 14 days" silently
+// truncates once a tenant is busy — and because these are ordered by
+// conversation, whole conversations drop out of the averages. Page
+// through with .range() instead, up to a hard ceiling that bounds the
+// browser's work.
+const PAGE_SIZE = 1000
+const MAX_ROWS = 50_000
+
+async function fetchAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    const rows = data ?? []
+    out.push(...rows)
+    if (rows.length < PAGE_SIZE) break
+  }
+  return out
+}
+
+/** Messages from the last `days` days, ordered for per-conversation walks. */
+async function loadRecentMessages(db: DB, days: number): Promise<TeamMessageRow[]> {
+  const since = daysAgoStart(days - 1).toISOString()
+  return fetchAllPages<TeamMessageRow>((from, to) =>
+    db
+      .from('messages')
+      .select('conversation_id, sender_type, created_at')
+      .gte('created_at', since)
+      .order('conversation_id', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
+}
 
 // --- 1. Metric cards ---------------------------------------------------
 
@@ -175,20 +219,7 @@ export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
   // outbound" pair. 14 days gives us both "this week" + "last week"
   // with enough overlap if the user opens the dashboard late on a
   // Monday.
-  const fourteenDaysAgo = daysAgoStart(13).toISOString()
-  const { data, error } = await db
-    .from('messages')
-    .select('conversation_id, sender_type, created_at')
-    .gte('created_at', fourteenDaysAgo)
-    .order('conversation_id', { ascending: true })
-    .order('created_at', { ascending: true })
-  if (error) throw error
-
-  const rows = (data ?? []) as {
-    conversation_id: string
-    sender_type: string
-    created_at: string
-  }[]
+  const rows = await loadRecentMessages(db, 14)
 
   // Group per conversation, pair unreplied customer messages with the
   // next outbound message from the agent/bot. A single customer message
@@ -261,6 +292,51 @@ export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
     thisWeekAvg: avg(thisWeekMins),
     lastWeekAvg: avg(lastWeekMins),
   }
+}
+
+// --- 4b. Team performance ---------------------------------------------
+
+/** Window for the team table: same 14 days as the response-time chart. */
+export const TEAM_WINDOW_DAYS = 14
+
+export async function loadTeamPerformance(db: DB): Promise<TeamPerformance> {
+  const messages = await loadRecentMessages(db, TEAM_WINDOW_DAYS)
+  const ids = [...new Set(messages.map((m) => m.conversation_id))]
+
+  // `in` filters travel in the URL, so look conversations up in chunks.
+  const conversations: TeamConversationRow[] = []
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await db
+      .from('conversations')
+      .select('id, status, assigned_agent_id, contacts(name, phone)')
+      .in('id', ids.slice(i, i + 200))
+    if (error) throw error
+    for (const row of (data ?? []) as unknown as {
+      id: string
+      status: string
+      assigned_agent_id: string | null
+      contacts: { name: string | null; phone: string | null } | null
+    }[]) {
+      conversations.push({
+        id: row.id,
+        status: row.status,
+        assigned_agent_id: row.assigned_agent_id,
+        contact_name: row.contacts?.name || row.contacts?.phone || null,
+      })
+    }
+  }
+
+  const { data: profiles, error: profilesError } = await db
+    .from('profiles')
+    .select('user_id, full_name, email')
+  if (profilesError) throw profilesError
+  const names = new Map<string, string | null>(
+    ((profiles ?? []) as { user_id: string; full_name: string | null; email: string | null }[]).map(
+      (p) => [p.user_id, p.full_name || p.email],
+    ),
+  )
+
+  return computeTeamPerformance(messages, conversations, names)
 }
 
 // --- 5. Activity feed --------------------------------------------------

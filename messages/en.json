@@ -131,6 +131,22 @@
       "noReplies": "No replies recorded yet",
       "noRepliesHint": "This chart fills in as you reply to customer messages."
     },
+    "teamPerformance": {
+      "title": "Team performance",
+      "description": "Last 14 days, by assigned agent",
+      "waitingBadge": "{count, plural, one {# waiting for a reply} other {# waiting for a reply}}",
+      "agent": "Agent",
+      "active": "Active",
+      "waiting": "Waiting",
+      "avgFirstResponse": "Avg. first response",
+      "unassigned": "Unassigned",
+      "unknownAgent": "Former member",
+      "unknownContact": "Unknown contact",
+      "longestWaiting": "Longest waiting for a reply",
+      "allAnswered": "Every conversation has a reply. 🎉",
+      "empty": "No conversations in the last 14 days",
+      "emptyHint": "This table fills in as customers write in and the team replies."
+    },
     "emptyState": {
       "title": "Not enough data yet"
     }

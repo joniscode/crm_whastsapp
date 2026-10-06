@@ -131,6 +131,22 @@
       "noReplies": "Nenhuma resposta registrada ainda",
       "noRepliesHint": "Este gráfico é preenchido conforme você responde às mensagens dos clientes."
     },
+    "teamPerformance": {
+      "title": "Desempenho da equipe",
+      "description": "Últimos 14 dias, por agente atribuído",
+      "waitingBadge": "{count, plural, one {# aguardando resposta} other {# aguardando resposta}}",
+      "agent": "Agente",
+      "active": "Ativas",
+      "waiting": "Aguardando",
+      "avgFirstResponse": "Média 1ª resposta",
+      "unassigned": "Sem atribuição",
+      "unknownAgent": "Ex-membro",
+      "unknownContact": "Contato desconhecido",
+      "longestWaiting": "Há mais tempo aguardando resposta",
+      "allAnswered": "Todas as conversas têm resposta. 🎉",
+      "empty": "Nenhuma conversa nos últimos 14 dias",
+      "emptyHint": "Esta tabela é preenchida conforme os clientes escrevem e a equipe responde."
+    },
     "emptyState": {
       "title": "Ainda não há dados suficientes"
     }

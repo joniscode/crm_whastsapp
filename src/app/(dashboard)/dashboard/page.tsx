@@ -17,7 +17,9 @@ import {
   loadMetrics,
   loadPipelineDonut,
   loadResponseTime,
+  loadTeamPerformance,
 } from '@/lib/dashboard/queries'
+import type { TeamPerformance } from '@/lib/dashboard/team'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -33,6 +35,7 @@ import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { TeamPerformancePanel } from '@/components/dashboard/team-performance'
 
 import { useTranslations } from 'next-intl'
 
@@ -60,6 +63,9 @@ export default function DashboardPage() {
 
   const [responseTime, setResponseTime] = useState<ResponseTimeSummary | null>(null)
   const [responseTimeLoading, setResponseTimeLoading] = useState(true)
+
+  const [team, setTeam] = useState<TeamPerformance | null>(null)
+  const [teamLoading, setTeamLoading] = useState(true)
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
@@ -89,6 +95,11 @@ export default function DashboardPage() {
       .then((r) => setResponseTime(r))
       .catch((err) => console.error('[dashboard] response time failed:', err))
       .finally(() => setResponseTimeLoading(false))
+
+    void loadTeamPerformance(db)
+      .then((tp) => setTeam(tp))
+      .catch((err) => console.error('[dashboard] team performance failed:', err))
+      .finally(() => setTeamLoading(false))
 
     // Fetch up to 50 so the biggest page-size option in the feed
     // (50 rows) is already in memory — switching sizes then becomes
@@ -218,6 +229,9 @@ export default function DashboardPage() {
 
       {/* Response time */}
       <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
+
+      {/* Team performance */}
+      <TeamPerformancePanel data={team} loading={teamLoading} />
 
       {/* Activity feed */}
       <ActivityFeed items={activity} loading={activityLoading} />
