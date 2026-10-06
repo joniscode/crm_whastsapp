@@ -81,3 +81,8 @@ funcionando con el límite en memoria.
   Mantén la copia activada.
 - Las subidas desde el inbox van directas del navegador a Supabase
   Storage, así que el límite de Vercel no les afecta.
+
+## Después del despliegue
+
+Monitorización, alertas, copias de seguridad, actualizaciones del
+original e integraciones: ver [operaciones.md](operaciones.md).
