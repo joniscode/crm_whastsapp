@@ -8,10 +8,11 @@
  *
  * Trade-off: a single Node process holds the Map, so horizontal scale
  * (multiple regions, multiple Hostinger nodes, Vercel serverless fan-
- * out) silently defeats the limit. If you scale beyond one instance,
- * swap the `check` implementation for Redis / Upstash / Cloudflare
- * Durable Objects keeping the same return shape. The call sites won't
- * change.
+ * out) silently defeats the limit. Route handlers therefore call the
+ * async `rateLimit()` below, which uses Upstash Redis when
+ * `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or Vercel's
+ * `KV_REST_API_URL` / `KV_REST_API_TOKEN`) are set and falls back to
+ * this in-memory limiter otherwise.
  *
  * Memory: entries are ~50 bytes each. With LIGHT_SWEEP below, expired
  * keys get cleared opportunistically on every ~1 000th call, so a
@@ -87,6 +88,69 @@ export function checkRateLimit(
     reset: entry.resetAt,
     limit,
   };
+}
+
+/**
+ * Shared-store variant of `checkRateLimit` for multi-instance deploys
+ * (Vercel serverless, several regions / containers). When Upstash Redis
+ * REST credentials are present the counter lives in Redis, so every
+ * instance shares one budget; otherwise this is exactly
+ * `checkRateLimit`. Accepts both the Upstash names and the ones the
+ * Vercel Marketplace integration injects (`KV_REST_API_*`).
+ *
+ * Same fixed-window semantics: INCR the key, set its TTL only on the
+ * first hit of the window (PEXPIRE ... NX), read the remaining TTL to
+ * report `reset`. If Redis is unreachable we fall back to the
+ * in-process limiter rather than failing every request — a degraded
+ * limit beats an outage.
+ */
+export async function rateLimit(
+  key: string,
+  opts: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return checkRateLimit(key, opts);
+
+  const redisKey = `rl:${key}`;
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([
+        ['INCR', redisKey],
+        ['PEXPIRE', redisKey, String(opts.windowMs), 'NX'],
+        ['PTTL', redisKey],
+      ]),
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`);
+    const [incr, , pttl] = (await res.json()) as Array<{
+      result?: number;
+      error?: string;
+    }>;
+    if (typeof incr?.result !== 'number') {
+      throw new Error(incr?.error ?? 'Upstash INCR returned no result');
+    }
+    const count = incr.result;
+    const ttl =
+      typeof pttl?.result === 'number' && pttl.result > 0
+        ? pttl.result
+        : opts.windowMs;
+    return {
+      success: count <= opts.limit,
+      remaining: Math.max(0, opts.limit - count),
+      reset: Date.now() + ttl,
+      limit: opts.limit,
+    };
+  } catch (err) {
+    console.error('[rate-limit] Redis unavailable, using in-memory limiter:', err);
+    return checkRateLimit(key, opts);
+  }
 }
 
 /**

@@ -12,7 +12,7 @@ import {
   loadAccountMetaCredentials,
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { rateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -101,7 +101,7 @@ export async function dispatchInboundToAiReply(
     // marketing blast landing 200 replies at once) so we never run the
     // owner's key past the provider's rate limit. Over the limit → skip
     // the auto-reply; the inbound still sits in the inbox for a human.
-    const acctLimit = checkRateLimit(
+    const acctLimit = await rateLimit(
       `ai-autoreply:${accountId}`,
       RATE_LIMITS.aiAutoReplyAccount,
     )

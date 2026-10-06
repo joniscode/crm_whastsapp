@@ -4,7 +4,7 @@ import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import {
-  checkRateLimit,
+  rateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     // the customer's message even though RLS blocked the local mirror.
     const { supabase, accountId, userId } = await requireRole('agent');
 
-    const limit = checkRateLimit(`react:${userId}`, RATE_LIMITS.react);
+    const limit = await rateLimit(`react:${userId}`, RATE_LIMITS.react);
     if (!limit.success) {
       return rateLimitResponse(limit);
     }

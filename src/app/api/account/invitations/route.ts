@@ -28,7 +28,7 @@ import {
 } from "@/lib/auth/invitations";
 import { isAccountRole } from "@/lib/auth/roles";
 import {
-  checkRateLimit,
+  rateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
@@ -172,7 +172,7 @@ export async function POST(request: Request) {
     // legitimate admin is far below this; the cap exists to keep
     // a script run in a loop or a compromised admin session from
     // flooding `account_invitations` with rows.
-    const limit = checkRateLimit(
+    const limit = await rateLimit(
       `admin:inviteCreate:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );

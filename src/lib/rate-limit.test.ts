@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetRateLimitForTests,
   checkRateLimit,
+  rateLimit,
   rateLimitResponse,
 } from "./rate-limit";
 
@@ -61,6 +62,75 @@ describe("checkRateLimit", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("rateLimit (shared store)", () => {
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  function stubRedis(count: number, pttl: number) {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://redis.example.com/");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "tok");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([{ result: count }, { result: 1 }, { result: pttl }]),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("falls back to the in-memory limiter when Redis is not configured", async () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "");
+    vi.stubEnv("KV_REST_API_URL", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await rateLimit("user:1", OPTS);
+    await rateLimit("user:1", OPTS);
+    await rateLimit("user:1", OPTS);
+    expect((await rateLimit("user:1", OPTS)).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("counts in Redis with INCR + PEXPIRE NX + PTTL", async () => {
+    const fetchMock = stubRedis(2, 30_000);
+    const result = await rateLimit("user:1", OPTS);
+    expect(result).toMatchObject({ success: true, remaining: 1, limit: 3 });
+    expect(result.reset).toBeGreaterThan(Date.now() + 29_000);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://redis.example.com/pipeline");
+    expect(init.headers.Authorization).toBe("Bearer tok");
+    expect(JSON.parse(init.body)).toEqual([
+      ["INCR", "rl:user:1"],
+      ["PEXPIRE", "rl:user:1", "60000", "NX"],
+      ["PTTL", "rl:user:1"],
+    ]);
+  });
+
+  it("rejects once the shared counter passes the limit", async () => {
+    stubRedis(4, 10_000);
+    const result = await rateLimit("user:1", OPTS);
+    expect(result.success).toBe(false);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("degrades to the in-memory limiter when Redis errors", async () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://redis.example.com");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "tok");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await rateLimit("user:1", OPTS);
+    expect(result).toMatchObject({ success: true, remaining: 2 });
+    spy.mockRestore();
   });
 });
 
