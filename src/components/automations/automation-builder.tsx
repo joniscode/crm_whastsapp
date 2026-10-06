@@ -1481,6 +1481,17 @@ function StepEditor({
               />
             </FieldBlock>
           )}
+          {cfg.subject === "time_of_day" && (
+            <FieldBlock label={t("config.daysLabel")}>
+              <Input
+                placeholder={t("config.placeholderDays")}
+                value={(cfg.value as string) ?? ""}
+                onChange={(e) => set({ value: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{t("config.daysHint")}</p>
+            </FieldBlock>
+          )}
         </>
       )
     case "send_webhook":

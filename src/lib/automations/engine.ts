@@ -24,6 +24,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { isWithinTimeWindow } from './time-window'
 
 // ------------------------------------------------------------
 // Public API
@@ -806,19 +807,15 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       return text.toLowerCase().includes((cfg.value ?? '').toLowerCase())
     }
     case 'time_of_day': {
-      // operand form "HH:mm-HH:mm" — true if now is within that window
-      // (supports over-midnight ranges like "18:00-09:00").
-      const [from, to] = (cfg.operand ?? '').split('-')
-      if (!from || !to) return false
-      const now = new Date()
-      const mins = now.getHours() * 60 + now.getMinutes()
-      const parse = (s: string) => {
-        const [h, m] = s.split(':').map(Number)
-        return (h || 0) * 60 + (m || 0)
-      }
-      const f = parse(from)
-      const t = parse(to)
-      return f <= t ? mins >= f && mins < t : mins >= f || mins < t
+      // operand "HH:mm-HH:mm" (over-midnight ranges like "18:00-09:00"
+      // work), optional value "mon,tue,..." to restrict the days, read
+      // in AUTOMATION_TIMEZONE — see time-window.ts.
+      return isWithinTimeWindow(
+        new Date(),
+        cfg.operand,
+        cfg.value,
+        process.env.AUTOMATION_TIMEZONE,
+      )
     }
     default:
       return false

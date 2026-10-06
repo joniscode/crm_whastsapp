@@ -205,6 +205,17 @@ describe("validateStepsForActivation", () => {
       "steps[0].subject",
     ]);
   });
+
+  it("checks the time_of_day window format and optional days", () => {
+    const cond = (operand: string, value?: string) =>
+      validateStepsForActivation([
+        { step_type: "condition", step_config: { subject: "time_of_day", operand, value } },
+      ]).map((i) => i.path);
+    expect(cond("09:00-18:00")).toEqual([]);
+    expect(cond("09:00-18:00", "mon,tue,wed,thu,fri")).toEqual([]);
+    expect(cond("9am to 6pm")).toEqual(["steps[0].operand"]);
+    expect(cond("09:00-18:00", "weekdays")).toEqual(["steps[0].value"]);
+  });
 });
 
 describe("validateTriggerForActivation", () => {

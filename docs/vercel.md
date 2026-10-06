@@ -35,6 +35,9 @@ lo que cambia respecto a un despliegue tradicional.
    | `NEXT_PUBLIC_APP_LOCALE` | `es` para la interfaz en español (se inyecta en build: redeploy al cambiarla) |
    | `AUTOMATION_CRON_SECRET` y `CRON_SECRET` | El mismo valor aleatorio largo en las dos (`openssl rand -hex 32`) |
    | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Ver "Rate limiting" |
+   | `AUTOMATION_TIMEZONE` | `America/Bogota`. Sin ella, la condición "Hora del día" de las automatizaciones usa UTC |
+   | `HEALTH_ALERT_WEBHOOK_URL` | Webhook de Slack/Discord/Google Chat para las alertas del chequeo de salud (opcional) |
+   | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | Monitorización de errores con Sentry (opcional, recomendado) |
 
 4. **Webhook de Meta**: en tu Meta App → WhatsApp → Configuration,
    pon `https://tu-dominio/api/whatsapp/webhook` y suscribe el campo

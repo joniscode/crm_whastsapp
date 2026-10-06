@@ -1,5 +1,6 @@
 import type { AutomationTriggerType } from '@/types'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { parseWeekdays } from './time-window'
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -124,6 +125,21 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       if (!nonEmpty(c.operand)) {
         issues.push({ path: `${path}.operand`, message: 'condition operand is required' })
+      } else if (
+        c.subject === 'time_of_day' &&
+        !/^\s*\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s*$/.test(String(c.operand))
+      ) {
+        issues.push({ path: `${path}.operand`, message: 'time window must look like HH:mm-HH:mm' })
+      }
+      if (
+        c.subject === 'time_of_day' &&
+        nonEmpty(c.value) &&
+        parseWeekdays(String(c.value)).length === 0
+      ) {
+        issues.push({
+          path: `${path}.value`,
+          message: 'days must be a comma-separated list of mon, tue, wed, thu, fri, sat, sun',
+        })
       }
       break
     case 'send_webhook':

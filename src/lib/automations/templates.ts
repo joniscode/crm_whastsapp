@@ -60,21 +60,25 @@ export const AUTOMATION_TEMPLATES: Record<TemplateSlug, AutomationTemplateDefini
     trigger_type: 'new_message_received',
     trigger_config: {},
     steps: [
+      // Condition = business hours (Mon–Fri 09:00–18:00, read in
+      // AUTOMATION_TIMEZONE); the auto-reply hangs off the "no" branch,
+      // so evenings, nights and weekends are all covered.
       {
         step_type: 'condition',
         step_config: {
           subject: 'time_of_day',
-          operand: '18:00-09:00',
+          operand: '09:00-18:00',
+          value: 'mon,tue,wed,thu,fri',
         },
       },
       {
         step_type: 'send_message',
         step_config: {
           text:
-            "Thanks for your message! Our team is offline right now (9am–6pm) and will reply first thing tomorrow.",
+            "Thanks for your message! Our team is offline right now (Mon–Fri, 9am–6pm) and will reply as soon as we're back.",
         },
         parent_index: 0,
-        branch: 'yes',
+        branch: 'no',
       },
     ],
   },
